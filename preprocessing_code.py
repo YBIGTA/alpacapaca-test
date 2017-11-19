@@ -1,39 +1,59 @@
 import json
-import pandas as pd
-
-# json 객체 디코딩
-json_data = list()
-
-with open('bamboo.json', 'r', encoding='UTF-8') as data_file:
-    for line in data_file:
-        json_data.append(json.loads(line))
+import re  # 정규표현식을 처리하기 위한 모듈
+import string
 
 
-# 대숲 글만 filtering
-message_data = list() # 글만 따로 저장하는 리스트
-error_occured = list() # 에러가 발생한 인덱스에 있는 객체들 저장하는 리스트
+class FileUtils: # 유틸리티성 클래스: 데이터를 읽어들이고 데이터를 내보내는 역할
+    @staticmethod  #static 이라 객체 따로 생성없이 바로 가져다 쓸 수 있음.
+    def load_data(filename):
+        with open(filename, 'r', encoding='UTF-8') as file:
+            for line in file:
+                yield json.loads(line) #yield: generator로 iteration 형태로 만들어주는 것
 
-for i in range(len(json_data)):
-    try:
-        temp_obj = json_data[i]
-        message_data.append(temp_obj['message'])
-        
-    except:   
-        error_occured.append(i) #불필요한 정보. 단순 예외처리
+    @staticmethod
+    def write_data(filename, output_list):
+        with open(filename, 'w', encoding='UTF-8') as file:
+            file.write("\n".join(output_list))
 
-# 단어 별로 split하기
-word_container = list() 
 
-for text in message_data:
-    temp = text.split()[8:]
-    word_container.append(temp)
+class MessageProcessor: # 문자 데이터 처리하기 위한 클래스
+    def __init__(self, regex_pattern): #regex_patter: 정규표현식 패턴을 인자로 받음
+        self.regex_pattern = regex_pattern
 
-# 이차원 리스트를 일차원 리스트로 변환
-word_list = []
-for word_lst in word_container:
-    for word in word_lst:
-        word_list.append(word)
+    @staticmethod
+    def get_messages(posts): #대숲글 전체 데이터 중에 key 'message'를 갖는 것들만 필터링하기 위해 사용
+        for post in posts:
+            if 'message' in post: # post는 딕셔너리 형태이므로 찾아야하는 key값이 있는지 여부 검사
+                yield post['message'] # 해당 키 값이 있는 경우 generator 생성
 
-# csv 파일로 변환 및 저장
-data = pd.DataFrame({'단어': word_list})
-data.to_csv("word_data.csv")
+    def get_results(self, messages): 
+        for message in messages:
+            lines = message.split('\n')
+            # 인덱스 3 이전에는 ~번째 외침, 시간 정보 등이 들어있기 때문에 스킵한다.
+            for line in lines[3:]:
+                if len(line) > 0:
+                    yield self.__process_line(line)
+
+    def __process_line(self, line):
+        # 문장부호 앞뒤로 공백을 추가한다.
+        s = re.sub(self.regex_pattern, r' \1 ', line) 
+        # 여러개의 공백이 있는 경우엔 하나로 줄인다.
+        return re.sub('\s{2,}', ' ', s)
+
+
+# 실행부분
+if __name__ == '__main__':
+    input_filename = 'bamboo.json' #input 파일 경로 알맞게 수정
+    output_filename = 'result.txt' #output 파일 경로 알맞게 수정
+    punctuation_regex = '([' + string.punctuation + '])'
+    bamboo_processor = MessageProcessor(punctuation_regex)
+
+    # 데이터 읽어오기
+    bamboo_data = FileUtils.load_data(input_filename)
+
+    # 데이터 처리하기
+    messages = MessageProcessor.get_messages(bamboo_data)
+    results = bamboo_processor.get_results(messages)
+    
+    # 데이터 저장하기
+    FileUtils.write_data(output_filename, results)
